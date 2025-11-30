@@ -1,898 +1,294 @@
-<!-- RoutinePro — index.html (PART A of 3) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>RoutinePro</title>
-  <meta name="description" content="Track your daily study routine and earn XP">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4f46e5">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RoutinePro</title>
+    
+    <!-- 1. Styles & Icons -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- 2. React & Babel (To run the app without a computer) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Import map for modular CDNs -->
-  <script type="importmap">
-  {
-    "imports": {
-      "react": "https://esm.sh/react@18.2.0",
-      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-      "lucide-react": "https://esm.sh/lucide-react@0.292.0",
-      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-      "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
-      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
-      "firebase/analytics": "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js"
-    }
-  }
-  </script>
-
-  <!-- Babel for JSX in browser -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <style>
-    body { -webkit-tap-highlight-color: transparent; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-  </style>
+    <style>
+        /* Mobile Optimizations */
+        body { -webkit-tap-highlight-color: transparent; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Smooth Fade In */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade { animation: fadeIn 0.4s ease-out forwards; }
+    </style>
 </head>
 <body class="bg-slate-50 text-slate-900 select-none">
-  <div id="root"></div>
-
-  <!-- Begin app code -->
-  <script type="text/babel" data-type="module">
-    import React, { useState, useEffect, useMemo } from "react";
-    import { createRoot } from "react-dom/client";
-    import {
-      Calendar, Clock, BookOpen, Star, Edit3, Layout, List,
-      X, Award, BarChart3, TrendingUp, RefreshCw, Loader2,
-      PieChart, Zap, Trophy, History as HistoryIcon, ShoppingBag,
-      Coins, Check, Download
-    } from "lucide-react";
-
-    // Firebase modular imports via importmap above
-    import { initializeApp } from "firebase/app";
-    import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
-    import {
-      getFirestore, collection, doc, setDoc, onSnapshot, query,
-      orderBy, limit, serverTimestamp, increment, getDoc, getDocs
-    } from "firebase/firestore";
-
-    // --- FIREBASE CONFIG (keep your keys here) ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyBrIzzkBX83WNhQg3JscBVdp2QIIAdOeEk",
-      authDomain: "study-tracker-12df3.firebaseapp.com",
-      projectId: "study-tracker-12df3",
-      storageBucket: "study-tracker-12df3.firebasestorage.app",
-      messagingSenderId: "958324817996",
-      appId: "1:958324817996:web:63ab303ce874bf2adfb4e9",
-      measurementId: "G-8Y8RJCE9VZ"
-    };
-
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-
-    // --- CONSTANTS ---
-    const TARGET_STUDY_HOURS = 8;
-    const SUBJECTS = ["Physics", "Chemistry", "Math", "Biology", "Bengali", "English"];
-
-    const THEMES = {
-      indigo: { id: "indigo", label: "Classic Indigo", price: 0, color: "indigo", bg: "bg-[#F8FAFC]" },
-      emerald: { id: "emerald", label: "Forest Focus", price: 400, color: "emerald", bg: "bg-emerald-50" },
-      rose: { id: "rose", label: "Sunset Vibes", price: 750, color: "rose", bg: "bg-rose-50" }
-    };
-
-    const DEFAULT_ROUTINE = [
-      { time: "06:00", label: "Wake Up" },
-      { time: "06:30", label: "Fresh & Morning Hygiene" },
-      { time: "07:00", label: "Coaching / Tuition" },
-      { time: "10:00", label: "Breakfast & Rest" },
-      { time: "11:00", label: "Self Study Session 1" },
-      { time: "13:30", label: "Bath & Lunch" },
-      { time: "14:30", label: "Nap / Rest" },
-      { time: "16:00", label: "Self Study Session 2" },
-      { time: "18:00", label: "Snacks & Refreshment" },
-      { time: "18:30", label: "Evening Study / Coaching" },
-      { time: "21:30", label: "Dinner" },
-      { time: "22:30", label: "Review Day & Diary" },
-      { time: "23:00", label: "Sleep" }
-    ];
-
-    const WEEKLY_SCHEDULE = {
-      "Monday": DEFAULT_ROUTINE, "Tuesday": DEFAULT_ROUTINE, "Wednesday": DEFAULT_ROUTINE,
-      "Thursday": DEFAULT_ROUTINE, "Friday": DEFAULT_ROUTINE, "Saturday": DEFAULT_ROUTINE,
-      "Sunday": [
-        { time: "07:00", label: "Wake Up" },
-        { time: "08:00", label: "Weekly Revision" },
-        { time: "10:00", label: "Breakfast" },
-        { time: "11:00", label: "Mock Test" },
-        { time: "14:00", label: "Lunch" },
-        { time: "18:00", label: "Planning" },
-        { time: "22:00", label: "Sleep" }
-      ]
-    };
-
-    // --- HELPERS ---
-    const getTodayDateString = () => new Date().toISOString().split("T")[0];
-    const getDayName = (date) => date.toLocaleDateString("en-US", { weekday: "long" });
-    const getGradeLetter = (p) => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B" : p >= 60 ? "C" : p >= 50 ? "D" : "F";
-    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-    // Grade colors used in UI (tailwind classes)
-    const getGradeColor = (g) => (g === "A+" || g === "A") ? "bg-emerald-500 text-white" : g === "B" ? "bg-blue-500 text-white" : g === "C" ? "bg-yellow-500 text-white" : "bg-red-500 text-white";
-
-    // --- COMPONENTS: small, robust, not dependent on external state---
-    const Loader = () => <Loader2 className="animate-spin" />;
-
-    const StarRating = ({ rating = 0, setRating = () => { }, max = 5, readOnly = false }) => (
-      <div className="flex gap-1">
-        {Array.from({ length: max }).map((_, i) => (
-          <button key={i} type="button" disabled={readOnly} onClick={(e) => { e.preventDefault(); if (!readOnly) setRating(i + 1); }} className={`p-1 ${i < rating ? "text-yellow-400" : "text-gray-200"} ${!readOnly ? "hover:scale-110 cursor-pointer" : ""}`}>
-            <Star fill={i < rating ? "currentColor" : "none"} size={readOnly ? 16 : 20} />
-          </button>
-        ))}
-      </div>
-    );
-
-    // Timeline item is simple stateless UI
-    const TimelineItem = ({ item, isActive, isPast }) => (
-      <div className={`relative flex gap-4 p-4 rounded-xl border ${isActive ? "bg-indigo-50 border-indigo-500 shadow-lg" : isPast ? "bg-gray-50 border-gray-100 opacity-70" : "bg-white border-gray-100"}`}>
-        <div className={`absolute left-4 top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 z-20 ${isActive ? "bg-indigo-500 border-indigo-200" : "bg-white border-indigo-200"}`}></div>
-        <div className={`font-mono font-bold text-lg w-14 ${isActive ? "text-indigo-600" : "text-gray-400"}`}>{item.time}</div>
-        <div className="flex-1">
-          <div className={`font-semibold ${isActive ? "text-indigo-900 text-lg" : "text-gray-700"}`}>{item.label}</div>
-        </div>
-      </div>
-    );
-
-    // History modal component will be included in Part B/C, but we reference it here to avoid undefined errors later.
-    function HistoryModal({ log, onClose }) {
-      if (!log) return null;
-      // readable date helper (handles Firestore Timestamp)
-      let readableDate = log.date;
-      try {
-        if (log.date && typeof log.date.toDate === "function") readableDate = log.date.toDate().toLocaleDateString();
-        else if (typeof log.date === "string") readableDate = new Date(log.date).toLocaleDateString();
-      } catch (e) { readableDate = String(log.date || log.id); }
-
-      const total = Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
-
-      return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div onClick={onClose} className="absolute inset-0 bg-black/50"></div>
-          <div className="relative z-60 w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <div>
-                <h3 className="font-bold text-lg">Record — {readableDate}</h3>
-                <p className="text-xs text-gray-500">{total}h • {log.grades?.overall?.grade || "N/A"}</p>
-              </div>
-              <div><button onClick={onClose} className="text-gray-500 px-3 py-1 rounded hover:bg-gray-100">Close</button></div>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {(Object.entries(log.studyData || {}).length === 0) ? (
-                <div className="text-sm text-gray-500 italic">No study data recorded for this day.</div>
-              ) : (
-                Object.entries(log.studyData || {}).map(([sub, v]) => (
-                  <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                    <div className="font-medium">{sub}</div>
-                    <div className="text-sm text-gray-600">{((v.self || 0) + (v.own || 0))}h</div>
-                  </div>
-                ))
-              )}
-
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                <div className="flex justify-between text-sm"><span>Routine Grade</span><span className="font-bold">{log.grades?.routine?.grade || "N/A"}</span></div>
-                <div className="flex justify-between text-sm mt-1"><span>Study Grade</span><span className="font-bold">{log.grades?.study?.grade || "N/A"}</span></div>
-                <div className="flex justify-between text-sm mt-1"><span>Overall</span><span className="font-bold">{log.grades?.overall?.grade || "N/A"}</span></div>
-              </div>
-
-              <div>
-                <h4 className="font-semibold mb-2">Coins awarded</h4>
-                <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-100">
-                  <div className="text-sm">Total awarded</div>
-                  <div className="font-bold">{log.awardedCoins || 0} coins</div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button onClick={onClose} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // --- MAIN APP ---
-    function App() {
-      const [user, setUser] = useState(null);
-      const [currentTime, setCurrentTime] = useState(new Date());
-      const [activeTab, setActiveTab] = useState("routine");
-      const [schedule, setSchedule] = useState([]);
-      const [studyData, setStudyData] = useState({});
-      const [dailyRatings, setDailyRatings] = useState({});
-      const [diaryEntry, setDiaryEntry] = useState("");
-      const [historyLogs, setHistoryLogs] = useState([]);
-      const [userStats, setUserStats] = useState({ walletBalance: 0, unlockedThemes: ["indigo"], currentTheme: "indigo", streak: 0 });
-      const [todayGrades, setTodayGrades] = useState(null);
-      const [isSubmitting, setIsSubmitting] = useState(false);
-      const [selectedLog, setSelectedLog] = useState(null);
-      const themeColor = THEMES[userStats.currentTheme]?.color || "indigo";
-
-      // auto-install prompt
-      useEffect(() => {
-        function onBeforeInstall(e) {
-          e.preventDefault();
-          // store if needed (not shown)
-        }
-        window.addEventListener("beforeinstallprompt", onBeforeInstall);
-        return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-      }, []);
-
-      useEffect(() => {
-        signInAnonymously(auth).catch((e) => console.error("signin error", e));
-        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-        const unsubAuth = onAuthStateChanged(auth, setUser);
-        return () => { clearInterval(timer); unsubAuth(); };
-      }, []);
-
-      useEffect(() => {
-        const day = getDayName(currentTime);
-        setSchedule(WEEKLY_SCHEDULE[day] || DEFAULT_ROUTINE);
-      }, [currentTime]);
-
-      // Firestore listeners
-      useEffect(() => {
-        if (!user) return;
-        const todayStr = getTodayDateString();
-        const todayRef = doc(db, "users", user.uid, "dailyLogs", todayStr);
-        const unsubToday = onSnapshot(todayRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            if (!studyData || Object.keys(studyData).length === 0) setStudyData(data.studyData || {});
-            if (!diaryEntry) setDiaryEntry(data.diary || "");
-            setDailyRatings(data.ratings || {});
-            if (data.grades) setTodayGrades(data.grades);
-          }
-        });
-
-        const historyQ = query(collection(db, "users", user.uid, "dailyLogs"), orderBy("date", "desc"), limit(30));
-        const unsubHistory = onSnapshot(historyQ, (snap) => {
-          setHistoryLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-
-        const statsRef = doc(db, "users", user.uid, "userStats", "profile");
-        const unsubStats = onSnapshot(statsRef, (snap) => {
-          if (snap.exists()) setUserStats(snap.data());
-          else setDoc(statsRef, { walletBalance: 0, unlockedThemes: ["indigo"], currentTheme: "indigo", streak: 0 });
-        });
-
-        return () => { unsubToday(); unsubHistory(); unsubStats(); };
-      }, [user]);
-
-    // --- PART A ends here. Send "Part B" to receive next chunk (study views, end-day logic, history modal wiring, shop UI). ---
-  </script>
-</body>
-</html>
-<!-- RoutinePro — index.html (PART B of 3) -->
-<script type="text/babel" data-type="module">
-/* --- continuing inside the same <script> from Part A --- */
-
-    // --- HELPERS & STATEFUL ACTIONS inside App scope (continued) ---
-    // Note: these functions rely on variables declared in Part A (user, db, etc.)
-
-    // update studyData locally and schedule autosave
-    function handleStudyInputLocal(setStudyData, studyDataState, subject, type, value) {
-      const v = parseFloat(value);
-      const next = { ...(studyDataState || {}) };
-      next[subject] = { ...(next[subject] || { self: 0, own: 0 }), [type]: isNaN(v) ? 0 : v };
-      setStudyData(next);
-      // autosave will be scheduled by caller (we provide a generic helper below)
-    }
-
-    // Autosave helper (debounced)
-    function useAutoSave(user, studyData, diaryEntry, dailyRatings) {
-      useEffect(() => {
-        if (!user) return;
-        const tid = setTimeout(() => {
-          const todayStr = getTodayDateString();
-          setDoc(doc(db, "users", user.uid, "dailyLogs", todayStr), {
-            date: todayStr,
-            studyData,
-            diary: diaryEntry,
-            ratings: dailyRatings,
-            lastUpdated: serverTimestamp()
-          }, { merge: true }).catch(console.error);
-        }, 900);
-        return () => clearTimeout(tid);
-      }, [user, studyData, diaryEntry, dailyRatings]);
-    }
-
-    // compute total study hours
-    function getTotalStudyLocal(studyDataState) {
-      return Object.values(studyDataState || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
-    }
-
-    // Earnings calculator (same logic as earlier)
-    function calculateEarnings({ totalStudyHours, routinePercent, studyGrade, streak, maxDailyCap = 500 }) {
-      const baseCoins = Math.floor(totalStudyHours * 10);
-      const ROUTINE_THRESHOLD = 80;
-      const ROUTINE_BONUS_FLAT = 25;
-      const routineBonus = (routinePercent >= ROUTINE_THRESHOLD && totalStudyHours > 0) ? ROUTINE_BONUS_FLAT : 0;
-      const gradeMultipliers = { 'A+': 1.25, 'A': 1.1, 'B': 1.03, 'C': 1.0, 'D': 1.0, 'F': 1.0 };
-      const gradeMultiplier = gradeMultipliers[studyGrade] || 1.0;
-      const STREAK_MILESTONE = 3;
-      const STREAK_BONUS_PER_MILESTONE = 50;
-      const streakBonus = Math.floor(streak / STREAK_MILESTONE) * STREAK_BONUS_PER_MILESTONE;
-      const subtotal = Math.round((baseCoins + routineBonus + streakBonus) * gradeMultiplier);
-      const totalWithCap = Math.min(subtotal, maxDailyCap);
-      return { baseCoins, routineBonus, streakBonus, gradeMultiplier, subtotal, cappedTotal: totalWithCap };
-    }
-
-    // finalize day and award coins (atomic-ish)
-    async function handleEndDayAction(user, studyDataState, dailyRatingsState, historyLogsState, userStatsState, setTodayGradesLocal) {
-      if (!user) throw new Error("Not signed in");
-      const todayStr = getTodayDateString();
-      const dailyRef = doc(db, "users", user.uid, "dailyLogs", todayStr);
-      const docSnap = await getDoc(dailyRef);
-      const prevData = docSnap.exists() ? docSnap.data() : {};
-      const coinsAlreadyAwarded = prevData.awardedCoins || 0;
-
-      // routine percent: stars sum
-      let earnedStars = 0;
-      (Object.values(dailyRatingsState || {}) || []).forEach(v => { earnedStars += (v || 0); });
-      // if schedule present, compute percent relative to max stars (5 * schedule length)
-      // but we don't have schedule here, so approximate: if no ratings, routinePercent = 0
-      const maxStars = (DEFAULT_ROUTINE.length * 5) || 1;
-      const routinePercent = maxStars ? (earnedStars / maxStars) * 100 : 0;
-
-      const totalStudyHours = getTotalStudyLocal(studyDataState);
-
-      // compute study grade relative to recent history
-      let studyGrade = "B", studyPercent = 0;
-      const validHistory = (historyLogsState || []).filter(l => l.date !== todayStr);
-      if (validHistory.length === 0) {
-        studyPercent = Math.min(100, (totalStudyHours / TARGET_STUDY_HOURS) * 100);
-        studyGrade = studyPercent >= 90 ? "A+" : studyPercent >= 80 ? "A" : studyPercent >= 70 ? "B" : studyPercent >= 60 ? "C" : studyPercent >= 50 ? "D" : "F";
-      } else {
-        const recent = validHistory.slice(0, 7);
-        const sum = recent.reduce((acc, log) => acc + Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0), 0);
-        const avg = recent.length ? sum / recent.length : 0;
-        if (avg === 0) {
-          if (totalStudyHours > 0) { studyGrade = "A+"; studyPercent = 100; } else { studyGrade = "F"; studyPercent = 0; }
-        } else {
-          const r = totalStudyHours / avg;
-          if (r >= 1.2) { studyGrade = "A+"; studyPercent = 100; }
-          else if (r >= 1) { studyGrade = "A"; studyPercent = 90; }
-          else if (r >= 0.8) { studyGrade = "B"; studyPercent = 80; }
-          else if (r >= 0.6) { studyGrade = "C"; studyPercent = 60; }
-          else { studyGrade = "D"; studyPercent = 40; }
-        }
-      }
-      if (totalStudyHours > 0 && studyPercent === 0) { studyPercent = 20; studyGrade = "D"; }
-
-      const overallPercent = (routinePercent + studyPercent) / 2;
-      const gradesPayload = {
-        routine: { percent: routinePercent, grade: getGradeLetter(routinePercent) },
-        study: { percent: studyPercent, grade: studyGrade },
-        overall: { percent: overallPercent, grade: getGradeLetter(overallPercent) }
-      };
-
-      // compute streak
-      const prevStreak = (userStatsState && userStatsState.streak) ? userStatsState.streak : 0;
-      const countsForStreak = ["A+", "A", "B"].includes(gradesPayload.overall.grade);
-      const newStreak = countsForStreak ? prevStreak + 1 : 0;
-
-      const earnings = calculateEarnings({ totalStudyHours, routinePercent: gradesPayload.routine.percent, studyGrade: gradesPayload.study.grade, streak: newStreak, maxDailyCap: 500 });
-      const currentTotalCoins = earnings.cappedTotal;
-      const coinsToAward = Math.max(0, currentTotalCoins - coinsAlreadyAwarded);
-
-      // write daily log
-      await setDoc(dailyRef, {
-        date: todayStr,
-        studyData: studyDataState,
-        diary: prevData.diary || "",
-        ratings: dailyRatingsState,
-        grades: gradesPayload,
-        status: "completed",
-        awardedCoins: currentTotalCoins,
-        awardedCoinsDetailed: earnings,
-        lastUpdated: serverTimestamp()
-      }, { merge: true });
-
-      // update profile
-      const profileRef = doc(db, "users", user.uid, "userStats", "profile");
-      const updatePayload = { streak: newStreak };
-      if (coinsToAward > 0) updatePayload.walletBalance = increment(coinsToAward);
-      await setDoc(profileRef, updatePayload, { merge: true });
-
-      // return the updated info for UI updates
-      return { gradesPayload, earnings, awarded: currentTotalCoins };
-    }
-
-    // --- UI subcomponents (Study trend, Subject pie, Consistency) ---
-    function StudyTrendChart({ historyLogs = [], currentStudyTotal = 0 }) {
-      const chartData = [];
-      const today = new Date();
-      for (let i = 6; i > 0; i--) {
-        const d = new Date(); d.setDate(today.getDate() - i);
-        const dateStr = d.toISOString().split("T")[0];
-        const log = historyLogs.find(l => l.date === dateStr);
-        const total = log ? Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0) : 0;
-        chartData.push({ day: d.toLocaleDateString("en-US", { weekday: "short" }), val: total, isToday: false });
-      }
-      chartData.push({ day: "Today", val: currentStudyTotal, isToday: true });
-      const maxVal = Math.max(...chartData.map(d => d.val), 6);
-      return (
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2"><TrendingUp size={16} /> Study Trend (Last 7 Days)</h3>
-          <div className="flex items-end justify-between h-32 gap-2">
-            {chartData.map((d, i) => (
-              <div key={i} className="flex flex-col items-center flex-1 h-full justify-end group">
-                <div className="relative w-full flex justify-center items-end h-full">
-                  <div style={{ height: `${(d.val / maxVal) * 100}%` }} className={`w-full max-w-[20px] rounded-t-md transition-all duration-500 relative ${d.isToday ? "bg-indigo-600" : "bg-indigo-200 group-hover:bg-indigo-300"}`}>
-                    {d.val > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] bg-gray-800 text-white px-1.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">{d.val}h</span>}
-                  </div>
-                </div>
-                <span className={`text-[10px] mt-2 font-medium ${d.isToday ? "text-indigo-700" : "text-gray-400"}`}>{d.day}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    function SubjectPieChart({ history = [] }) {
-      const totals = {}; let grandTotal = 0;
-      history.forEach(log => { Object.entries(log.studyData || {}).forEach(([sub, data]) => { const val = (data.self || 0) + (data.own || 0); totals[sub] = (totals[sub] || 0) + val; grandTotal += val; }); });
-      if (grandTotal === 0) return <div className="text-center text-gray-400 py-8 text-sm italic">Log some study hours to see insights!</div>;
-      let currentDeg = 0;
-      const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
-      const gradients = Object.entries(totals).map(([sub, val], idx) => {
-        const percent = (val / grandTotal) * 100; const deg = (val / grandTotal) * 360; const color = COLORS[idx % COLORS.length];
-        const segment = `${color} ${currentDeg}deg ${currentDeg + deg}deg`; currentDeg += deg;
-        return { sub, percent, color, segment };
-      });
-      const gradientString = `conic-gradient(${gradients.map(g => g.segment).join(", ")})`;
-      return (
-        <div className="flex flex-col items-center">
-          <div className="w-40 h-40 rounded-full shadow-inner mb-6 relative" style={{ background: gradientString }}>
-            <div className="absolute inset-4 bg-white rounded-full flex items-center justify-center flex-col shadow-sm">
-              <span className="text-2xl font-bold text-gray-800">{Math.round(grandTotal)}h</span>
-              <span className="text-[10px] text-gray-400 uppercase">Total</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 w-full">
-            {gradients.sort((a,b) => b.percent - a.percent).map(g => (
-              <div key={g.sub} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: g.color }}></span><span className="text-gray-600">{g.sub}</span></div>
-                <span className="font-bold text-gray-800">{Math.round(g.percent)}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    // Consistency heatmap
-    function ConsistencyHeatmap({ history = [] }) {
-      const days = [];
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(); d.setDate(d.getDate() - i); const dateStr = d.toISOString().split("T")[0];
-        const log = history.find(l => l.date === dateStr);
-        days.push({ date: dateStr, grade: log?.grades?.overall?.grade, dayNum: d.getDate() });
-      }
-      return (
-        <div className="flex flex-wrap gap-1.5 justify-center">
-          {days.map((d, i) => (
-            <div key={i} className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-medium text-white/90 shadow-sm transition-transform hover:scale-110 ${d.grade ? (d.grade === "A+" || d.grade === "A" ? "bg-emerald-500" : d.grade === "B" ? "bg-blue-400" : d.grade === "C" ? "bg-yellow-400" : "bg-red-400") : "bg-gray-200"}`} title={d.date}>{d.grade ? d.grade[0] : d.dayNum}</div>
-          ))}
-        </div>
-      );
-    }
-
-    // --- Using autosave hook inside App (will run in Part C render)
-    // Note: we'll call useAutoSave from inside App with proper args.
-
-    // end of Part B; send "Part C" to receive final chunk (UI wiring, modals, createRoot)
-</script>
-<!-- RoutinePro — index.html (PART C of 3) -->
-<script type="text/babel" data-type="module">
-/* --- continuing inside the same <script> from Part A & Part B --- */
-
-    // --- PART C: UI wiring, event handlers, modals, render, and mount ---
-
-    function AppInner() {
-      // Re-create App state here (mirrors App in Part A)
-      const [user, setUser] = useState(null);
-      const [currentTime, setCurrentTime] = useState(new Date());
-      const [activeTab, setActiveTab] = useState("routine");
-      const [schedule, setSchedule] = useState([]);
-      const [studyData, setStudyData] = useState({});
-      const [dailyRatings, setDailyRatings] = useState({});
-      const [diaryEntry, setDiaryEntry] = useState("");
-      const [historyLogs, setHistoryLogs] = useState([]);
-      const [userStats, setUserStats] = useState({ walletBalance: 0, unlockedThemes: ["indigo"], currentTheme: "indigo", streak: 0 });
-      const [todayGrades, setTodayGrades] = useState(null);
-      const [isSubmitting, setIsSubmitting] = useState(false);
-      const [selectedLog, setSelectedLog] = useState(null);
-      const [showEndDayModal, setShowEndDayModal] = useState(false);
-      const [showShopModal, setShowShopModal] = useState(false);
-
-      // autosave hook
-      useAutoSave(user, studyData, diaryEntry, dailyRatings);
-
-      useEffect(() => {
-        signInAnonymously(auth).catch(e => console.error("signin error", e));
-        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-        const unsub = onAuthStateChanged(auth, (u) => {
-          setUser(u);
-        });
-        return () => { clearInterval(timer); unsub(); };
-      }, []);
-
-      useEffect(() => {
-        const day = getDayName(currentTime);
-        setSchedule(WEEKLY_SCHEDULE[day] || DEFAULT_ROUTINE);
-      }, [currentTime]);
-
-      useEffect(() => {
-        if (!user) return;
-        const todayStr = getTodayDateString();
-        const todayRef = doc(db, "users", user.uid, "dailyLogs", todayStr);
-        const unsubToday = onSnapshot(todayRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            if (!studyData || Object.keys(studyData).length === 0) setStudyData(data.studyData || {});
-            if (!diaryEntry) setDiaryEntry(data.diary || "");
-            setDailyRatings(data.ratings || {});
-            if (data.grades) setTodayGrades(data.grades);
-          }
-        });
-
-        const historyQ = query(collection(db, "users", user.uid, "dailyLogs"), orderBy("date", "desc"), limit(30));
-        const unsubHistory = onSnapshot(historyQ, (snap) => {
-          setHistoryLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-
-        const statsRef = doc(db, "users", user.uid, "userStats", "profile");
-        const unsubStats = onSnapshot(statsRef, (snap) => {
-          if (snap.exists()) setUserStats(snap.data());
-          else setDoc(statsRef, { walletBalance: 0, unlockedThemes: ["indigo"], currentTheme: "indigo", streak: 0 });
-        });
-
-        return () => { unsubToday(); unsubHistory(); unsubStats(); };
-      }, [user]);
-
-      // helper: update study input and set local state
-      function onStudyChange(subject, type, value) {
-        handleStudyInputLocal(setStudyData, studyData, subject, type, value);
-      }
-
-      // insert current time into diary
-      function handleInsertTime(customTime) {
-        let timeStr;
-        if (customTime) {
-          const [h, m] = customTime.split(":");
-          const d = new Date();
-          d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
-          timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        } else {
-          timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        }
-        setDiaryEntry(prev => prev ? prev + "\n" + `[${timeStr}] ` : `[${timeStr}] `);
-      }
-
-      // finish day handler (UI)
-      async function onFinishDay() {
-        if (!user) { alert("Still signing in — wait a moment."); return; }
-        if (!confirm("Finish day and collect coins?")) return;
-        setIsSubmitting(true);
-        try {
-          const result = await handleEndDayAction(user, studyData, dailyRatings, historyLogs, userStats, setTodayGrades);
-          // pull fresh profile snapshot (read after update)
-          const profSnap = await getDoc(doc(db, "users", user.uid, "userStats", "profile"));
-          if (profSnap.exists()) setUserStats(profSnap.data());
-          setTodayGrades(result.gradesPayload);
-          alert(`Day finalized. Awarded ${result.awarded} coins (see wallet).`);
-          setShowEndDayModal(false);
-        } catch (e) {
-          console.error("end day failed", e);
-          alert("Failed to finalize day: " + (e.message || e));
-        } finally {
-          setIsSubmitting(false);
-        }
-      }
-
-      // open history modal
-      function openHistory(log) { setSelectedLog(log); }
-
-      // buy theme
-      async function buyTheme(theme) {
-        if (!user) return alert("Not signed in");
-        if ((userStats.walletBalance || 0) < theme.price) return alert("Not enough coins");
-        const profileRef = doc(db, "users", user.uid, "userStats", "profile");
-        await setDoc(profileRef, { walletBalance: (userStats.walletBalance - theme.price), unlockedThemes: [...(userStats.unlockedThemes || []), theme.id] }, { merge: true });
-      }
-
-      // equip theme
-      async function equipTheme(themeId) {
-        if (!user) return;
-        const profileRef = doc(db, "users", user.uid, "userStats", "profile");
-        await setDoc(profileRef, { currentTheme: themeId }, { merge: true });
-      }
-
-      // compute total study hours today
-      const totalToday = getTotalStudyLocal(studyData);
-
-      // small Header UI
-      const Header = () => (
-        <header className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-20">
-          <div className="flex justify-between items-center">
-            <div className="font-bold text-xl text-indigo-700 flex items-center gap-2"><Layout size={20}/> RoutinePro</div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowShopModal(true)} className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
-                <ShoppingBag size={14}/> {userStats.walletBalance || 0}
-              </button>
-            </div>
-          </div>
-        </header>
-      );
-
-      // Main render
-      return (
-        <div className={`min-h-screen ${THEMES[userStats.currentTheme]?.bg || "bg-[#F8FAFC]"} pb-24`}>
-          <Header />
-          <main className="max-w-md mx-auto px-4 py-6">
-            {activeTab === "routine" && (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-800">Hello, Student</h2>
-                    <p className="text-gray-500 text-xs mt-1">{currentTime.toDateString()}</p>
-                  </div>
-                  {todayGrades ? (
-                    <div className={`px-4 py-2 rounded-xl text-center shadow-sm ${getGradeColor(todayGrades.overall.grade)}`}>
-                      <div className="text-[10px] font-bold uppercase opacity-90">Today's Grade</div>
-                      <div className="text-2xl font-extrabold">{todayGrades.overall.grade}</div>
-                    </div>
-                  ) : (
-                    <div className="text-2xl font-light text-indigo-600">{currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                  )}
-                </div>
-
-                <div className="space-y-4 relative">
-                  <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-gray-200"></div>
-                  {schedule.map((item, idx) => {
-                    const start = item.time.split(":").map(Number);
-                    const currentMins = currentTime.getHours() * 60 + currentTime.getMinutes();
-                    const itemMins = start[0] * 60 + start[1];
-                    const next = schedule[idx + 1] ? schedule[idx + 1].time.split(":").map(Number) : [24, 0];
-                    const nextMins = next[0] * 60 + next[1];
-                    const isActive = currentMins >= itemMins && currentMins < nextMins;
-                    const isPast = currentMins >= nextMins;
-                    return <TimelineItem key={idx} item={item} isActive={isActive} isPast={isPast} />;
-                  })}
-                </div>
-
-                <button onClick={() => setShowEndDayModal(true)} className={`fixed bottom-24 right-4 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2 font-bold z-30 bg-indigo-600`}>
-                  <Award size={20} /> {todayGrades ? "Update Grade" : "Finish Day"}
-                </button>
-              </div>
-            )}
-
-            {activeTab === "study" && (
-              <div className="space-y-6">
-                <StudyTrendChart historyLogs={historyLogs} currentStudyTotal={totalToday} />
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-baseline justify-between">
-                  <span className="text-gray-500 font-bold text-sm uppercase">Total Today</span>
-                  <span className="text-3xl font-extrabold text-indigo-600">{totalToday} <span className="text-sm font-medium text-gray-400">hrs</span></span>
-                </div>
-
-                <div className="grid gap-3">
-                  {SUBJECTS.map(sub => (
-                    <div key={sub} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="font-bold text-gray-800">{sub}</span>
-                        <span className="text-indigo-600 font-medium text-sm">{((studyData[sub]?.self || 0) + (studyData[sub]?.own || 0))}h</span>
-                      </div>
-                      <div className="flex gap-4">
-                        <div className="flex-1">
-                          <label className="text-[10px] text-gray-400 uppercase font-bold mb-1 block">Self Study</label>
-                          <input type="number" step="0.5" min="0" placeholder="0" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" value={studyData[sub]?.self || ''} onChange={(e) => onStudyChange(sub, "self", e.target.value)} />
-                        </div>
-                        <div className="flex-1">
-                          <label className="text-[10px] text-gray-400 uppercase font-bold mb-1 block">Coaching/Own</label>
-                          <input type="number" step="0.5" min="0" placeholder="0" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" value={studyData[sub]?.own || ''} onChange={(e) => onStudyChange(sub, "own", e.target.value)} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "diary" && (
-              <div className="h-[calc(100vh-140px)] flex flex-col">
-                <div className="flex justify-between items-end mb-4 px-2">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-800">Daily Diary</h2>
-                    <p className="text-indigo-600 font-medium text-sm">{currentTime.toLocaleDateString()}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <input type="time" className="bg-white border rounded px-2 py-1" id="customDiaryTime" />
-                    <button onClick={() => handleInsertTime(document.getElementById("customDiaryTime")?.value)} className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-sm font-bold flex gap-1 items-center"><Clock size={16}/> Insert</button>
-                  </div>
-                </div>
-
-                <div className="flex-1 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col relative">
-                  <textarea className="flex-1 p-6 w-full resize-none outline-none text-gray-700 leading-relaxed text-lg bg-transparent z-10" placeholder="Start typing..." value={diaryEntry} onChange={(e) => setDiaryEntry(e.target.value)}></textarea>
-                  <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', backgroundSize: '100% 32px', marginTop: '34px' }}></div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "history" && (
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 px-2">Past Records</h2>
-                {historyLogs.map(log => {
-                  const total = Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
-                  const displayDate = (() => {
-                    try {
-                      if (log.date && typeof log.date.toDate === "function") return log.date.toDate().toLocaleDateString();
-                      if (typeof log.date === "string") return new Date(log.date).toLocaleDateString();
-                      return String(log.date || log.id);
-                    } catch (e) { return String(log.id || log.date); }
-                  })();
-                  return (
-                    <button key={log.id} onClick={() => openHistory(log)} className="w-full bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex justify-between items-center text-left">
-                      <div>
-                        <div className="font-bold text-gray-800 text-lg">{displayDate}</div>
-                        <div className="text-xs text-gray-500 mt-2">Routine: {log.grades?.routine?.grade || "N/A"} • Study: {total}h ({log.grades?.study?.grade || "N/A"})</div>
-                      </div>
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm ${getGradeColor(log.grades?.overall?.grade || "F")}`}>{log.grades?.overall?.grade || "N/A"}</div>
+    <div id="root"></div>
+
+    <!-- 3. The App Logic -->
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, query, orderBy, limit, serverTimestamp, increment, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // --- Firebase Config (Use the global variable from the environment) ---
+        // Note: When you host this on GitHub, you will replace 'JSON.parse...' with your real config object.
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // Placeholder: Replace this with your own keys from Firebase Console if hosting externally
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_APP.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const { useState, useEffect, useMemo } = React;
+
+        // --- DATA & CONSTANTS ---
+        const THEMES = {
+            indigo: { id: 'indigo', label: "Classic", color: "text-indigo-600", bg: "bg-indigo-50", btn: "bg-indigo-600", border: "border-indigo-200" },
+            emerald: { id: 'emerald', label: "Forest", color: "text-emerald-600", bg: "bg-emerald-50", btn: "bg-emerald-600", border: "border-emerald-200" },
+            rose: { id: 'rose', label: "Sunset", color: "text-rose-600", bg: "bg-rose-50", btn: "bg-rose-600", border: "border-rose-200" },
+        };
+
+        const DEFAULT_ROUTINE = [
+            { time: "06:00", label: "Wake Up" },
+            { time: "07:00", label: "Coaching" },
+            { time: "11:00", label: "Self Study 1" },
+            { time: "14:30", label: "Nap / Rest" },
+            { time: "16:00", label: "Self Study 2" },
+            { time: "18:30", label: "Evening Study" },
+            { time: "23:00", label: "Sleep" }
+        ];
+
+        const SUBJECTS = ["Physics", "Chemistry", "Math", "Biology", "English"];
+
+        // --- COMPONENTS ---
+
+        const Icon = ({ name, className }) => <i className={`fa-solid fa-${name} ${className}`}></i>;
+
+        const StarRating = ({ rating, setRating, readOnly }) => (
+            <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                    <button key={star} 
+                        disabled={readOnly}
+                        onClick={() => !readOnly && setRating(star)}
+                        className={`text-lg transition-transform ${!readOnly ? 'active:scale-90' : ''} ${star <= rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                    >
+                        <i className="fa-solid fa-star"></i>
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                ))}
+            </div>
+        );
 
-            {activeTab === "analytics" && (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center mb-2 px-2">
-                  <h2 className="text-2xl font-bold text-gray-800">Analytics</h2>
-                  <div className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100 flex items-center gap-1"><Trophy size={14}/> Lvl {(Math.floor((userStats.walletBalance || 0)/100) + 1)}</div>
-                </div>
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [activeTab, setActiveTab] = useState('routine');
+            const [schedule, setSchedule] = useState(DEFAULT_ROUTINE);
+            const [studyData, setStudyData] = useState({});
+            const [dailyRatings, setDailyRatings] = useState({});
+            const [diary, setDiary] = useState("");
+            const [installPrompt, setInstallPrompt] = useState(null);
+            const [showEndModal, setShowEndModal] = useState(false);
 
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                  <h3 className="font-bold text-gray-700 mb-6 flex items-center gap-2"><PieChart size={18} /> Study Distribution</h3>
-                  <SubjectPieChart history={historyLogs} />
-                </div>
+            // --- 1. PWA & Auth Setup ---
+            useEffect(() => {
+                // PWA Prompt Listener
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault();
+                    setInstallPrompt(e);
+                });
 
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                  <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Calendar size={18} /> Consistency Map</h3>
-                  <ConsistencyHeatmap history={historyLogs} />
-                </div>
-              </div>
-            )}
-          </main>
+                // Inject Manifest dynamically so it works as a PWA
+                const manifest = {
+                    name: "RoutinePro",
+                    short_name: "Routine",
+                    start_url: ".",
+                    display: "standalone",
+                    background_color: "#ffffff",
+                    theme_color: "#4f46e5",
+                    icons: [{ src: "https://cdn-icons-png.flaticon.com/512/2921/2921222.png", sizes: "192x192", type: "image/png" }]
+                };
+                const link = document.createElement('link');
+                link.rel = 'manifest';
+                link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type: 'application/json'}));
+                document.head.appendChild(link);
 
-          {/* Navigation */}
-          <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-200 pb-6 pt-2 px-6 flex justify-between z-40">
-            {[
-              { id: "routine", label: "Routine" },
-              { id: "study", label: "Study" },
-              { id: "diary", label: "Diary" },
-              { id: "history", label: "History" },
-              { id: "analytics", label: "Analytics" }
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 text-center py-3 ${activeTab === tab.id ? "text-indigo-600 font-bold" : "text-gray-400"}`}>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+                // Auth
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+                return onAuthStateChanged(auth, setUser);
+            }, []);
 
-          {/* End Day Modal */}
-          {showEndDayModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl">
-                <div className="p-5 border-b border-gray-100 flex justify-between items-center">
-                  <h3 className="font-bold text-lg">Finalize Day</h3>
-                  <button onClick={() => setShowEndDayModal(false)} className="text-gray-500"><X /></button>
-                </div>
-                <div className="p-5 space-y-6">
-                  <div className="bg-blue-50 p-4 rounded-xl text-blue-900 text-sm">
-                    <h4 className="font-bold mb-1">Current Study Status</h4>
-                    <p>Logged <strong>{totalToday} hours</strong> today.</p>
-                    <div className="mt-2 flex items-center gap-2 text-xs font-bold text-blue-700"><Coins size={14}/> Earn {Math.floor(totalToday * 10)} XP Coins</div>
-                  </div>
+            // --- 2. Data Sync ---
+            useEffect(() => {
+                if (!user) return;
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Real-time listener for today's data
+                const unsub = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs', today), (doc) => {
+                    if (doc.exists()) {
+                        const data = doc.data();
+                        setStudyData(data.studyData || {});
+                        setDailyRatings(data.ratings || {});
+                        setDiary(data.diary || "");
+                    }
+                });
+                return () => unsub();
+            }, [user]);
 
-                  <div>
-                    <h4 className="font-bold text-gray-700 mb-2">Rate Your Schedule</h4>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1 no-scrollbar">
-                      {schedule.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                          <span className="text-xs font-bold text-gray-600 w-1/2 leading-tight">{item.label}</span>
-                          <StarRating rating={dailyRatings[item.time] || 0} setRating={(r) => setDailyRatings(prev => ({ ...prev, [item.time]: r }))} />
-                        </div>
-                      ))}
+            // --- 3. Actions ---
+            const saveToDb = async (newData) => {
+                if (!user) return;
+                const today = new Date().toISOString().split('T')[0];
+                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs', today), {
+                    date: today,
+                    ...newData,
+                    lastUpdated: serverTimestamp()
+                }, { merge: true });
+            };
+
+            const handleInstall = () => {
+                if (installPrompt) installPrompt.prompt();
+            };
+
+            const getTotalHours = () => Object.values(studyData).reduce((a, b) => a + (parseFloat(b) || 0), 0);
+
+            // --- 4. Render Tabs ---
+            const renderRoutine = () => (
+                <div className="space-y-3 pb-24 animate-fade">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold text-slate-800">Today's Schedule</h2>
+                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-bold">
+                            {new Date().toLocaleDateString('en-US', {weekday:'short'})}
+                        </span>
                     </div>
-                  </div>
-
-                  <button onClick={onFinishDay} disabled={isSubmitting} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-xl flex justify-center items-center gap-2 disabled:opacity-70">
-                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><BarChart3 size={20} /> {todayGrades ? "Update & Save" : "Finish & Collect XP"}</>}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Shop Modal */}
-          {showShopModal && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl">
-                <div className="p-5 border-b border-gray-100 flex justify-between items-center">
-                  <h3 className="font-bold text-xl flex items-center gap-2"><ShoppingBag /> XP Shop</h3>
-                  <button onClick={() => setShowShopModal(false)} className="text-gray-500"><X /></button>
-                </div>
-                <div className="p-5 space-y-3">
-                  <div className="flex items-center justify-between bg-yellow-50 p-4 rounded-xl mb-4 border border-yellow-100">
-                    <span className="text-yellow-800 font-bold text-sm">Wallet Balance</span>
-                    <div className="flex items-center gap-1.5 text-xl font-bold text-yellow-600">{userStats.walletBalance || 0} <Coins /></div>
-                  </div>
-
-                  {Object.values(THEMES).map(theme => {
-                    const isUnlocked = (userStats.unlockedThemes || []).includes(theme.id) || theme.id === "indigo";
-                    const isEquipped = userStats.currentTheme === theme.id || (!userStats.currentTheme && theme.id === "indigo");
-                    const canAfford = (userStats.walletBalance || 0) >= (theme.price || 0);
-                    return (
-                      <div key={theme.id} className={`flex items-center justify-between p-3 rounded-xl border-2 ${isEquipped ? "border-indigo-500 bg-indigo-50" : "border-gray-100 bg-white"}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full bg-${theme.color}-500 shadow-sm`}></div>
-                          <div>
-                            <div className="font-bold text-gray-800">{theme.label}</div>
-                            <div className="text-xs text-gray-500">{theme.price === 0 ? "Free" : `${theme.price} XP Coins`}</div>
-                          </div>
+                    {schedule.map((item, i) => (
+                        <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+                            <div className="font-mono font-bold text-slate-400 text-sm w-12">{item.time}</div>
+                            <div className="flex-1 font-semibold text-slate-700">{item.label}</div>
+                            {dailyRatings[item.time] ? (
+                                <div className="text-yellow-400 text-sm"><Icon name="star"/> {dailyRatings[item.time]}</div>
+                            ) : (
+                                <button onClick={() => {
+                                    const newRatings = {...dailyRatings, [item.time]: 5};
+                                    setDailyRatings(newRatings);
+                                    saveToDb({ ratings: newRatings });
+                                }} className="text-slate-200 hover:text-indigo-500"><Icon name="circle-check" className="text-xl"/></button>
+                            )}
                         </div>
-                        <div>
-                          {isEquipped ? <span className="text-xs font-bold text-indigo-600 flex items-center gap-1 bg-white px-2 py-1 rounded-lg"><Check size={12}/> Active</span> :
-                            isUnlocked ? <button onClick={() => equipTheme(theme.id)} className="text-xs font-bold bg-gray-900 text-white px-3 py-1.5 rounded-lg">Equip</button> :
-                              <button onClick={() => buyTheme(theme)} disabled={!canAfford} className={`text-xs font-bold px-3 py-1.5 rounded-lg ${canAfford ? "bg-yellow-400 text-yellow-900" : "bg-gray-200 text-gray-400"}`}>Buy <Coins size={12}/></button>}
-                        </div>
-                      </div>
-                    );
-                  })}
+                    ))}
                 </div>
-              </div>
-            </div>
-          )}
+            );
 
-          {/* History Modal (selectedLog) */}
-          {selectedLog && <HistoryModal log={selectedLog} onClose={() => setSelectedLog(null)} />}
+            const renderStudy = () => (
+                <div className="space-y-5 pb-24 animate-fade">
+                    <div className="bg-indigo-600 rounded-3xl p-6 text-white shadow-lg shadow-indigo-200">
+                        <div className="flex justify-between">
+                            <div>
+                                <div className="text-indigo-200 text-sm font-medium">Total Study</div>
+                                <div className="text-4xl font-bold mt-1">{getTotalHours()} <span className="text-lg opacity-60">hrs</span></div>
+                            </div>
+                            <div className="h-12 w-12 bg-white/20 rounded-full flex items-center justify-center">
+                                <Icon name="book-open" className="text-xl"/>
+                            </div>
+                        </div>
+                    </div>
 
-        </div>
-      );
-    }
+                    <div className="grid grid-cols-1 gap-3">
+                        {SUBJECTS.map(sub => (
+                            <div key={sub} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center">
+                                <span className="font-bold text-slate-700"><Icon name="book" className="text-indigo-400 mr-2"/>{sub}</span>
+                                <input 
+                                    type="number" 
+                                    placeholder="0"
+                                    className="w-16 bg-slate-50 border border-slate-200 rounded-lg p-2 text-center font-bold text-slate-700 focus:outline-indigo-500"
+                                    value={studyData[sub] || ''}
+                                    onChange={(e) => {
+                                        const newVal = {...studyData, [sub]: e.target.value};
+                                        setStudyData(newVal);
+                                        saveToDb({ studyData: newVal });
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
 
-    // Mount the app
-    const container = document.getElementById("root");
-    const root = createRoot(container);
-    root.render(<AppInner />);
+            // --- 5. Main Layout ---
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-slate-50 relative">
+                    {/* Header */}
+                    <div className="bg-white/80 backdrop-blur sticky top-0 z-20 px-5 py-4 flex justify-between items-center border-b border-slate-100">
+                        <div className="font-bold text-xl text-indigo-700 flex items-center gap-2">
+                            <Icon name="layer-group"/> RoutinePro
+                        </div>
+                        {installPrompt && (
+                            <button onClick={handleInstall} className="bg-black text-white px-3 py-1.5 rounded-full text-xs font-bold animate-pulse">
+                                <Icon name="download"/> Install
+                            </button>
+                        )}
+                    </div>
 
-    // Register service worker (if available)
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js")
-          .then(reg => console.log("SW registered", reg))
-          .catch(err => console.log("SW register failed", err));
-      });
-    }
+                    {/* Content */}
+                    <div className="p-5">
+                        {activeTab === 'routine' && renderRoutine()}
+                        {activeTab === 'study' && renderStudy()}
+                        {activeTab === 'diary' && (
+                            <div className="animate-fade h-[70vh] flex flex-col">
+                                <textarea 
+                                    className="flex-1 w-full bg-white rounded-2xl p-5 border border-slate-200 resize-none focus:outline-indigo-500 text-lg leading-relaxed"
+                                    placeholder="Dear Diary..."
+                                    value={diary}
+                                    onChange={(e) => {
+                                        setDiary(e.target.value);
+                                        // Simple debounce could go here, saving directly for demo
+                                        saveToDb({ diary: e.target.value });
+                                    }}
+                                ></textarea>
+                            </div>
+                        )}
+                    </div>
 
-  // End of script for Part C
-</script>
+                    {/* Bottom Nav */}
+                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 pb-safe z-30">
+                        <div className="flex justify-around p-3 max-w-md mx-auto">
+                            {[
+                                {id: 'routine', icon: 'list', label: 'Routine'},
+                                {id: 'study', icon: 'graduation-cap', label: 'Study'},
+                                {id: 'diary', icon: 'pen-nib', label: 'Diary'}
+                            ].map(tab => (
+                                <button key={tab.id} 
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400'}`}
+                                >
+                                    <Icon name={tab.icon} className="text-xl mb-1"/>
+                                    <span className="text-[10px] font-bold uppercase">{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
+
