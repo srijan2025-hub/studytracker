@@ -1,0 +1,857 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Calendar, 
+  Clock, 
+  BookOpen, 
+  Star, 
+  Edit3, 
+  Layout,
+  List,
+  CheckCircle2,
+  X,
+  Award,
+  BarChart3,
+  TrendingUp,
+  RefreshCw,
+  Loader2,
+  PieChart,
+  Zap,
+  Trophy,
+  History as HistoryIcon,
+  ShoppingBag,
+  Coins,
+  Check,
+  Download
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInAnonymously, 
+  signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  limit, 
+  serverTimestamp,
+  increment,
+  getDoc
+} from 'firebase/firestore';
+
+// --- Firebase Config ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- 📅 CONFIGURATION 📅 ---
+const TARGET_STUDY_HOURS = 8; 
+
+// --- 🎨 THEME CONFIGURATION 🎨 ---
+const THEMES = {
+  indigo: { id: 'indigo', label: "Classic Indigo", price: 0, color: "indigo", bg: "bg-[#F8FAFC]" },
+  emerald: { id: 'emerald', label: "Forest Focus", price: 400, color: "emerald", bg: "bg-emerald-50" },
+  rose: { id: 'rose', label: "Sunset Vibes", price: 750, color: "rose", bg: "bg-rose-50" },
+  sky: { id: 'sky', label: "Deep Ocean", price: 1000, color: "sky", bg: "bg-sky-50" },
+  violet: { id: 'violet', label: "Royal Suite", price: 1500, color: "violet", bg: "bg-violet-50" },
+};
+
+const DEFAULT_ROUTINE = [
+  { time: "06:00", label: "Wake Up" },
+  { time: "06:30", label: "Fresh & Morning Hygiene" },
+  { time: "07:00", label: "Coaching / Tuition" },
+  { time: "10:00", label: "Breakfast & Rest" },
+  { time: "11:00", label: "Self Study Session 1" },
+  { time: "13:30", label: "Bath & Lunch" },
+  { time: "14:30", label: "Nap / Rest" },
+  { time: "16:00", label: "Self Study Session 2" },
+  { time: "18:00", label: "Snacks & Refreshment" },
+  { time: "18:30", label: "Evening Study / Coaching" },
+  { time: "21:30", label: "Dinner" },
+  { time: "22:30", label: "Review Day & Diary" },
+  { time: "23:00", label: "Sleep" }
+];
+
+const WEEKLY_SCHEDULE = {
+  "Monday": DEFAULT_ROUTINE,
+  "Tuesday": DEFAULT_ROUTINE,
+  "Wednesday": DEFAULT_ROUTINE,
+  "Thursday": DEFAULT_ROUTINE,
+  "Friday": DEFAULT_ROUTINE,
+  "Saturday": DEFAULT_ROUTINE,
+  "Sunday": [
+    { time: "07:00", label: "Wake Up" },
+    { time: "08:00", label: "Weekly Revision" },
+    { time: "10:00", label: "Breakfast" },
+    { time: "11:00", label: "Mock Test" },
+    { time: "14:00", label: "Lunch" },
+    { time: "18:00", label: "Planning" },
+    { time: "22:00", label: "Sleep" }
+  ]
+};
+
+const SUBJECTS = ["Physics", "Chemistry", "Math", "Biology", "Bengali", "English"];
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+
+// --- Helpers ---
+const getTodayDateString = () => new Date().toISOString().split('T')[0];
+const getDayName = (date) => date.toLocaleDateString('en-US', { weekday: 'long' });
+
+const getGradeLetter = (percentage) => {
+  if (percentage >= 90) return 'A+';
+  if (percentage >= 80) return 'A';
+  if (percentage >= 70) return 'B';
+  if (percentage >= 60) return 'C';
+  if (percentage >= 50) return 'D';
+  return 'F';
+};
+
+const getGradeColor = (grade) => {
+  if (grade === 'A+' || grade === 'A') return 'bg-emerald-500 text-white';
+  if (grade === 'B') return 'bg-blue-500 text-white';
+  if (grade === 'C') return 'bg-yellow-500 text-white';
+  return 'bg-red-500 text-white';
+};
+
+const getHeatmapColor = (grade) => {
+  if (!grade) return 'bg-gray-100';
+  if (grade === 'A+' || grade === 'A') return 'bg-emerald-500';
+  if (grade === 'B') return 'bg-blue-400';
+  if (grade === 'C') return 'bg-yellow-400';
+  return 'bg-red-400';
+};
+
+// --- Sub-Components ---
+
+const StarRating = ({ rating, setRating, max = 5, readOnly = false }) => (
+  <div className="flex gap-1">
+    {[...Array(max)].map((_, i) => (
+      <button
+        key={i}
+        type="button"
+        disabled={readOnly}
+        onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!readOnly) setRating(i + 1);
+        }}
+        className={`transition-all p-1 active:scale-95 ${i < rating ? 'text-yellow-400' : 'text-gray-200'} ${!readOnly && 'hover:scale-110 cursor-pointer'}`}
+      >
+        <Star fill={i < rating ? "currentColor" : "none"} size={readOnly ? 16 : 28} />
+      </button>
+    ))}
+  </div>
+);
+
+const TimelineItem = ({ item, isActive, isPast, themeColor }) => (
+  <div className={`relative flex gap-4 p-4 rounded-xl border transition-all duration-500 ${
+    isActive 
+      ? `bg-${themeColor}-50 border-${themeColor}-500 shadow-lg transform scale-[1.02] z-10` 
+      : isPast 
+        ? 'bg-gray-50 border-gray-100 opacity-60' 
+        : 'bg-white border-gray-100'
+  }`}>
+    <div className={`absolute left-4 top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 z-20 ${
+      isActive ? `bg-${themeColor}-500 border-${themeColor}-200 animate-pulse` : isPast ? 'bg-gray-400 border-white' : `bg-white border-${themeColor}-200`
+    }`}></div>
+    <div className={`font-mono font-bold text-lg w-14 ${isActive ? `text-${themeColor}-600` : 'text-gray-400'}`}>
+      {item.time}
+    </div>
+    <div className="flex-1">
+      <div className={`font-semibold ${isActive ? `text-${themeColor}-900 text-lg` : 'text-gray-700'}`}>
+        {item.label}
+      </div>
+      {isActive && (
+        <div className={`text-xs text-${themeColor}-500 font-bold uppercase tracking-wider mt-1`}>
+          Current Activity
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const GradeBadge = ({ label, grade, percent }) => (
+  <div className="flex flex-col items-center p-3 bg-gray-50 rounded-xl border border-gray-100 flex-1">
+    <span className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">{label}</span>
+    <div className={`text-xl font-bold px-3 py-1 rounded-lg shadow-sm ${getGradeColor(grade)}`}>
+      {grade}
+    </div>
+    <span className="text-xs text-gray-400 mt-1 font-mono">{Math.round(percent)}%</span>
+  </div>
+);
+
+// --- Analytics Charts ---
+
+const StudyTrendChart = ({ historyLogs, currentStudyTotal, themeColor }) => {
+  const chartData = [];
+  const today = new Date();
+  
+  for (let i = 6; i > 0; i--) {
+    const d = new Date();
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const log = historyLogs.find(l => l.date === dateStr);
+    const total = log ? Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0) : 0;
+    chartData.push({ day: d.toLocaleDateString('en-US', { weekday: 'short' }), val: total, isToday: false });
+  }
+  
+  chartData.push({ day: 'Today', val: currentStudyTotal, isToday: true });
+  const maxVal = Math.max(...chartData.map(d => d.val), 6); 
+
+  return (
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+      <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+        <TrendingUp size={16} className={`text-${themeColor}-600`}/> Study Trend (Last 7 Days)
+      </h3>
+      <div className="flex items-end justify-between h-32 gap-2">
+        {chartData.map((d, i) => (
+          <div key={i} className="flex flex-col items-center flex-1 h-full justify-end group">
+            <div className="relative w-full flex justify-center items-end h-full">
+               <div 
+                 style={{ height: `${(d.val / maxVal) * 100}%` }} 
+                 className={`w-full max-w-[20px] rounded-t-md transition-all duration-500 relative ${d.isToday ? `bg-${themeColor}-600` : `bg-${themeColor}-200 group-hover:bg-${themeColor}-300`}`}
+               >
+                 {d.val > 0 && (
+                   <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] bg-gray-800 text-white px-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                     {d.val}h
+                   </span>
+                 )}
+               </div>
+            </div>
+            <span className={`text-[10px] mt-2 font-medium ${d.isToday ? `text-${themeColor}-700` : 'text-gray-400'}`}>{d.day}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const SubjectPieChart = ({ history }) => {
+  const totals = {};
+  let grandTotal = 0;
+  history.forEach(log => {
+    Object.entries(log.studyData || {}).forEach(([sub, data]) => {
+      const val = (data.self || 0) + (data.own || 0);
+      totals[sub] = (totals[sub] || 0) + val;
+      grandTotal += val;
+    });
+  });
+
+  if (grandTotal === 0) return <div className="text-center text-gray-400 py-8 text-sm italic">Log some study hours to see insights!</div>;
+
+  let currentDeg = 0;
+  const gradients = Object.entries(totals).map(([sub, val], idx) => {
+    const percent = (val / grandTotal) * 100;
+    const deg = (val / grandTotal) * 360;
+    const color = COLORS[idx % COLORS.length];
+    const segment = `${color} ${currentDeg}deg ${currentDeg + deg}deg`;
+    currentDeg += deg;
+    return { sub, percent, color, segment };
+  });
+
+  const gradientString = `conic-gradient(${gradients.map(g => g.segment).join(', ')})`;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div 
+        className="w-40 h-40 rounded-full shadow-inner mb-6 relative"
+        style={{ background: gradientString }}
+      >
+        <div className="absolute inset-4 bg-white rounded-full flex items-center justify-center flex-col shadow-sm">
+           <span className="text-2xl font-bold text-gray-800">{Math.round(grandTotal)}h</span>
+           <span className="text-[10px] text-gray-400 uppercase">Total</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 w-full">
+        {gradients.sort((a,b) => b.percent - a.percent).map(g => (
+          <div key={g.sub} className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: g.color }}></span>
+              <span className="text-gray-600">{g.sub}</span>
+            </div>
+            <span className="font-bold text-gray-800">{Math.round(g.percent)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ConsistencyHeatmap = ({ history }) => {
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const log = history.find(l => l.date === dateStr);
+    days.push({ date: dateStr, grade: log?.grades?.overall?.grade, dayNum: d.getDate() });
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5 justify-center">
+      {days.map((d, i) => (
+        <div 
+          key={i}
+          className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-medium text-white/90 shadow-sm transition-transform hover:scale-110 ${getHeatmapColor(d.grade)}`}
+          title={d.date}
+        >
+          {d.grade ? d.grade[0] : d.dayNum}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// --- Shop Component ---
+
+const ShopModal = ({ userStats, onClose, onBuy, onEquip, themeColor }) => {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl flex flex-col">
+        <div className="p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+          <h3 className="font-bold text-xl text-gray-800 flex items-center gap-2">
+            <ShoppingBag className={`text-${themeColor}-600`} /> XP Shop
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100"><X size={20}/></button>
+        </div>
+        
+        <div className="p-5 space-y-2">
+          <div className="flex items-center justify-between bg-yellow-50 p-4 rounded-xl mb-4 border border-yellow-100">
+             <span className="text-yellow-800 font-bold text-sm">Wallet Balance</span>
+             <div className="flex items-center gap-1.5 text-xl font-bold text-yellow-600">
+               {userStats.walletBalance || 0} <Coins size={20} fill="currentColor" />
+             </div>
+          </div>
+
+          <div className="space-y-3">
+             {Object.values(THEMES).map(theme => {
+               const isUnlocked = userStats.unlockedThemes?.includes(theme.id) || theme.id === 'indigo';
+               const isEquipped = userStats.currentTheme === theme.id || (!userStats.currentTheme && theme.id === 'indigo');
+               const canAfford = (userStats.walletBalance || 0) >= theme.price;
+
+               return (
+                 <div key={theme.id} className={`flex items-center justify-between p-3 rounded-xl border-2 ${isEquipped ? `border-${themeColor}-500 bg-${themeColor}-50` : 'border-gray-100 bg-white'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full bg-${theme.color}-500 shadow-sm`}></div>
+                      <div>
+                        <div className="font-bold text-gray-800">{theme.label}</div>
+                        <div className="text-xs text-gray-500 font-medium">{theme.price === 0 ? "Free" : `${theme.price} XP Coins`}</div>
+                      </div>
+                    </div>
+                    <div>
+                      {isEquipped ? (
+                        <span className={`text-xs font-bold text-${theme.color}-600 flex items-center gap-1 bg-white px-2 py-1 rounded-lg shadow-sm`}>
+                          <Check size={12}/> Active
+                        </span>
+                      ) : isUnlocked ? (
+                        <button 
+                          onClick={() => onEquip(theme.id)}
+                          className="text-xs font-bold bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800"
+                        >
+                          Equip
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => onBuy(theme)}
+                          disabled={!canAfford}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 ${canAfford ? 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500' : 'bg-gray-200 text-gray-400'}`}
+                        >
+                          Buy <Coins size={12}/>
+                        </button>
+                      )}
+                    </div>
+                 </div>
+               )
+             })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HistoryModal = ({ log, onClose, themeColor }) => {
+  if (!log) return null;
+  const totalStudy = Object.values(log.studyData || {}).reduce((acc, curr) => acc + (curr.self || 0) + (curr.own || 0), 0);
+  const routineEntries = Object.entries(log.ratings || {}).sort();
+
+  const getLabelForTime = (t) => {
+    const [y, m, d] = log.date.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d); 
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    const schedule = WEEKLY_SCHEDULE[dayName] || DEFAULT_ROUTINE;
+    const found = schedule.find(item => item.time === t);
+    return found ? found.label : "Activity";
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+        <div className="bg-white border-b border-gray-100 p-5 flex justify-between items-center sticky top-0 z-10">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Performance Report</h3>
+            <p className="text-sm text-gray-500">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric'})}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><X size={24} /></button>
+        </div>
+
+        <div className="p-6 space-y-8">
+          <section>
+            <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Award className={`text-${themeColor}-600`} /> Final Grades
+            </h4>
+            <div className="flex gap-3 justify-between">
+              <GradeBadge label="Routine" grade={log.grades?.routine?.grade || '-'} percent={log.grades?.routine?.percent || 0} />
+              <GradeBadge label="Study" grade={log.grades?.study?.grade || '-'} percent={log.grades?.study?.percent || 0} />
+              <div className="w-px bg-gray-200 mx-1"></div>
+              <GradeBadge label="Overall" grade={log.grades?.overall?.grade || '-'} percent={log.grades?.overall?.percent || 0} />
+            </div>
+          </section>
+
+          <section>
+            <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+              <CheckCircle2 className="text-emerald-600" size={18}/> Routine Breakdown
+            </h4>
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              {routineEntries.length === 0 ? <p className="text-gray-400 italic text-sm">No ratings recorded.</p> :
+               routineEntries.map(([time, rating]) => (
+                  <div key={time} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-sm text-gray-700">{getLabelForTime(time)}</span>
+                      <span className="font-mono text-xs text-gray-400">{time}</span>
+                    </div>
+                    <StarRating rating={rating} readOnly max={5} />
+                  </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`bg-${themeColor}-50/50 p-5 rounded-2xl border border-${themeColor}-100`}>
+             <div className="flex justify-between items-center mb-4">
+                <h4 className={`font-bold text-${themeColor}-900 flex items-center gap-2`}><BookOpen size={18}/> Study Log</h4>
+                <span className={`bg-white px-2 py-1 rounded text-xs font-bold text-${themeColor}-600 border border-${themeColor}-100`}>Total: {totalStudy}h</span>
+             </div>
+             {Object.keys(log.studyData || {}).length === 0 ? (
+               <div className="text-sm text-gray-400 italic">No study recorded.</div>
+             ) : (
+               <div className="grid grid-cols-2 gap-3">
+                 {Object.entries(log.studyData || {}).map(([sub, data]) => (data.self > 0 || data.own > 0) && (
+                   <div key={sub} className={`bg-white p-2.5 rounded-xl border border-${themeColor}-100 shadow-sm`}>
+                     <div className="font-semibold text-gray-700 text-sm">{sub}</div>
+                     <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                       <span>Self: {data.self}h</span>
+                       <span>Own: {data.own}h</span>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             )}
+          </section>
+
+          {log.diary && (
+            <section className="bg-amber-50 p-5 rounded-2xl border border-amber-100">
+               <h4 className="font-bold text-amber-900 mb-2 flex items-center gap-2"><Edit3 size={18}/> Diary Entry</h4>
+               <p className="text-gray-700 text-sm whitespace-pre-wrap font-serif leading-relaxed">{log.diary}</p>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
+export default function DailyRoutineProPWA() {
+  const [user, setUser] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [activeTab, setActiveTab] = useState('routine'); 
+  const [showEndDayModal, setShowEndDayModal] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  
+  // Data
+  const [schedule, setSchedule] = useState([]);
+  const [studyData, setStudyData] = useState({});
+  const [diaryEntry, setDiaryEntry] = useState("");
+  const [dailyRatings, setDailyRatings] = useState({});
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [userStats, setUserStats] = useState({ walletBalance: 0, unlockedThemes: ['indigo'], currentTheme: 'indigo' });
+  
+  const [customDiaryTime, setCustomDiaryTime] = useState("");
+  const [todayGrades, setTodayGrades] = useState(null); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Derived Theme Color
+  const themeColor = THEMES[userStats.currentTheme]?.color || 'indigo';
+
+  // Gamification Stats
+  const gamificationStats = useMemo(() => {
+    let totalStudyHours = 0;
+    historyLogs.forEach(log => {
+      const hours = Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
+      totalStudyHours += hours;
+    });
+    
+    const xp = Math.round(totalStudyHours * 10);
+    const level = Math.floor(xp / 100) + 1;
+    const nextLevelXp = level * 100;
+    const progress = ((xp % 100) / 100) * 100;
+    return { totalStudyHours, xp, level, nextLevelXp, progress };
+  }, [historyLogs]);
+
+  // --- PWA INSTALLATION LOGIC ---
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    });
+  }, []);
+
+  const handleInstallClick = () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    installPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+    });
+  };
+
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    const unsubAuth = onAuthStateChanged(auth, setUser);
+    return () => { clearInterval(timer); unsubAuth(); };
+  }, []);
+
+  useEffect(() => {
+    const day = getDayName(currentTime);
+    setSchedule(WEEKLY_SCHEDULE[day] || DEFAULT_ROUTINE);
+  }, [currentTime]);
+
+  useEffect(() => {
+    if (!user) return;
+    const todayStr = getTodayDateString();
+
+    const todayRef = doc(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs', todayStr);
+    const unsubToday = onSnapshot(todayRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Object.keys(studyData).length === 0) setStudyData(data.studyData || {});
+        if (diaryEntry === "") setDiaryEntry(data.diary || "");
+        setDailyRatings(data.ratings || {});
+        if (data.grades) setTodayGrades(data.grades);
+      }
+    });
+
+    const historyQ = query(collection(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs'), orderBy('date', 'desc'), limit(30));
+    const unsubHistory = onSnapshot(historyQ, (snap) => {
+      setHistoryLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    const statsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userStats', 'profile');
+    const unsubStats = onSnapshot(statsRef, (snap) => {
+      if (snap.exists()) {
+        setUserStats(snap.data());
+      } else {
+        setDoc(statsRef, { walletBalance: 0, unlockedThemes: ['indigo'], currentTheme: 'indigo' });
+      }
+    });
+
+    return () => { unsubToday(); unsubHistory(); unsubStats(); };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const save = async () => {
+      const todayStr = getTodayDateString();
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs', todayStr), {
+          date: todayStr,
+          studyData,
+          diary: diaryEntry,
+          ratings: dailyRatings,
+          lastUpdated: serverTimestamp()
+        }, { merge: true });
+      } catch (e) { console.error("Auto-save error", e); }
+    };
+    const timeout = setTimeout(save, 2000);
+    return () => clearTimeout(timeout);
+  }, [studyData, diaryEntry, dailyRatings, user]);
+
+  const handleStudyInput = (subject, type, val) => {
+    setStudyData(prev => ({
+      ...prev,
+      [subject]: { ...prev[subject], [type]: parseFloat(val) || 0 }
+    }));
+  };
+
+  const handleInsertTime = () => {
+    let timeStr;
+    if (customDiaryTime) {
+      const [h, m] = customDiaryTime.split(':');
+      const d = new Date();
+      d.setHours(h);
+      d.setMinutes(m);
+      timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    const insertText = `[${timeStr}] `;
+    setDiaryEntry(prev => (prev ? prev + '\n' + insertText : insertText));
+  };
+
+  const handleEndDay = async () => {
+    if (!user) return;
+    setIsSubmitting(true);
+    
+    try {
+      const todayStr = getTodayDateString();
+      const dailyLogRef = doc(db, 'artifacts', appId, 'users', user.uid, 'dailyLogs', todayStr);
+      
+      const docSnap = await getDoc(dailyLogRef);
+      const prevData = docSnap.exists() ? docSnap.data() : {};
+      const coinsAlreadyAwarded = prevData.awardedCoins || 0;
+
+      let earnedStars = 0;
+      schedule.forEach(item => earnedStars += (dailyRatings[item.time] || 0));
+      const maxStars = schedule.length * 5;
+      const routinePercent = maxStars > 0 ? (earnedStars / maxStars) * 100 : 0;
+      
+      const totalStudyHours = Object.values(studyData).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
+      
+      let studyGrade = 'B'; 
+      let studyPercent = 0;
+      
+      const validHistory = historyLogs.filter(l => l.date !== getTodayDateString());
+      if (validHistory.length === 0) {
+        studyPercent = Math.min(100, (totalStudyHours / TARGET_STUDY_HOURS) * 100);
+        studyGrade = getGradeLetter(studyPercent);
+      } else {
+        const recentLogs = validHistory.slice(0, 7);
+        const sumHistory = recentLogs.reduce((acc, log) => {
+           const logTotal = Object.values(log.studyData || {}).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
+           return acc + logTotal;
+        }, 0);
+        const avgStudyTime = recentLogs.length > 0 ? sumHistory / recentLogs.length : 0;
+        
+        if (avgStudyTime === 0) {
+           if (totalStudyHours > 0) { studyGrade = 'A+'; studyPercent = 100; }
+           else { studyGrade = 'F'; studyPercent = 0; }
+        } else {
+           const ratio = totalStudyHours / avgStudyTime;
+           if (ratio >= 1.2) { studyGrade = 'A+'; studyPercent = 100; }
+           else if (ratio >= 1.0) { studyGrade = 'A'; studyPercent = 90; }
+           else if (ratio >= 0.8) { studyGrade = 'B'; studyPercent = 80; }
+           else if (ratio >= 0.6) { studyGrade = 'C'; studyPercent = 60; }
+           else if (ratio >= 0.4) { studyGrade = 'D'; studyPercent = 40; }
+           else { studyGrade = 'F'; studyPercent = 20; }
+        }
+      }
+
+      if (totalStudyHours > 0 && studyPercent === 0) {
+          studyPercent = 20; 
+          studyGrade = 'D';
+      }
+
+      const overallPercent = (routinePercent + studyPercent) / 2;
+
+      const gradesPayload = {
+        routine: { percent: routinePercent, grade: getGradeLetter(routinePercent) },
+        study: { percent: studyPercent, grade: studyGrade },
+        overall: { percent: overallPercent, grade: getGradeLetter(overallPercent) }
+      };
+
+      const currentTotalCoins = Math.floor(totalStudyHours * 10);
+      const coinsToAward = Math.max(0, currentTotalCoins - coinsAlreadyAwarded);
+
+      await setDoc(dailyLogRef, {
+        grades: gradesPayload,
+        status: 'completed',
+        ratings: dailyRatings,
+        studyData: studyData, 
+        awardedCoins: currentTotalCoins, 
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+
+      if (coinsToAward > 0) {
+          const statsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userStats', 'profile');
+          await setDoc(statsRef, {
+              walletBalance: increment(coinsToAward)
+          }, { merge: true });
+      }
+
+      setTodayGrades(gradesPayload);
+      setTimeout(() => {
+         setIsSubmitting(false);
+         setShowEndDayModal(false);
+      }, 800);
+    } catch (e) {
+      console.error(e);
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBuyTheme = async (theme) => {
+    if (!user) return;
+    if (userStats.walletBalance < theme.price) return;
+
+    const statsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userStats', 'profile');
+    const newBalance = userStats.walletBalance - theme.price;
+    const newUnlocked = [...(userStats.unlockedThemes || []), theme.id];
+    
+    await setDoc(statsRef, {
+        walletBalance: newBalance,
+        unlockedThemes: newUnlocked
+    }, { merge: true });
+  };
+
+  const handleEquipTheme = async (themeId) => {
+    if (!user) return;
+    const statsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'userStats', 'profile');
+    await setDoc(statsRef, { currentTheme: themeId }, { merge: true });
+  };
+
+  const getTotalStudy = () => Object.values(studyData).reduce((a, b) => a + (b.self || 0) + (b.own || 0), 0);
+
+  return (
+    <div className={`min-h-screen ${THEMES[userStats.currentTheme]?.bg || 'bg-[#F8FAFC]'} font-sans text-slate-900`}>
+      <header className="bg-white border-b border-gray-100 px-4 py-3 sticky top-0 z-20">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className={`font-bold text-xl text-${themeColor}-700 flex items-center gap-2`}>
+            <Layout size={24} /> RoutinePro
+          </div>
+          <div className="flex items-center gap-2">
+             {installPrompt && (
+                <button 
+                  onClick={handleInstallClick}
+                  className="bg-black text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 hover:bg-gray-800 transition-colors animate-pulse"
+                >
+                  <Download size={14}/> Install
+                </button>
+             )}
+             <button 
+               onClick={() => setShowShopModal(true)}
+               className={`flex items-center gap-1.5 bg-${themeColor}-50 text-${themeColor}-700 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-${themeColor}-100 transition-colors`}
+             >
+                <ShoppingBag size={14}/> 
+                <span>{userStats.walletBalance || 0}</span>
+             </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto px-4 py-6">
+        {activeTab === 'routine' && renderRoutine()}
+        {activeTab === 'study' && renderStudy()}
+        {activeTab === 'diary' && renderDiary()}
+        {activeTab === 'history' && renderHistory()}
+        {activeTab === 'analytics' && renderAnalytics()}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 pb-safe z-40">
+        <div className="max-w-md mx-auto flex justify-around p-2">
+          {[
+            { id: 'routine', icon: List, label: 'Routine' },
+            { id: 'study', icon: BookOpen, label: 'Study' },
+            { id: 'diary', icon: Edit3, label: 'Diary' },
+            { id: 'history', icon: HistoryIcon, label: 'History' },
+            { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center p-2 rounded-xl transition-all duration-300 w-14 ${
+                activeTab === tab.id ? `text-${themeColor}-600 bg-${themeColor}-50 scale-105` : 'text-gray-400 hover:bg-gray-50'
+              }`}
+            >
+              <tab.icon size={20} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+              <span className="text-[9px] font-medium mt-1">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {showEndDayModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+              <h3 className="font-bold text-lg text-gray-800">Finalize Day</h3>
+              <button onClick={() => setShowEndDayModal(false)} className="p-2 rounded-full hover:bg-gray-100"><X size={20}/></button>
+            </div>
+            
+            <div className="p-5 space-y-6">
+              <div className="bg-blue-50 p-4 rounded-xl text-blue-900 text-sm">
+                <h4 className="font-bold mb-1">Current Study Status</h4>
+                <p>You have logged <strong>{getTotalStudy()} hours</strong> of study today.</p>
+                <div className="mt-2 flex items-center gap-2 text-xs font-bold text-blue-700">
+                  <Coins size={14}/> Earn {Math.floor(getTotalStudy() * 10)} XP Coins
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-gray-700 mb-2">Rate Your Schedule</h4>
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                  {schedule.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                      <span className="text-xs font-bold text-gray-600 w-1/2 leading-tight">{item.label}</span>
+                      <StarRating 
+                        rating={dailyRatings[item.time] || 0} 
+                        setRating={(r) => setDailyRatings(prev => ({ ...prev, [item.time]: r }))} 
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                onClick={handleEndDay}
+                disabled={isSubmitting}
+                className={`w-full bg-${themeColor}-600 text-white py-4 rounded-2xl font-bold shadow-xl shadow-${themeColor}-200 hover:scale-[1.02] transition-transform flex justify-center items-center gap-2 disabled:opacity-70 disabled:scale-100`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin" size={20} /> Calculating...
+                  </>
+                ) : (
+                  <>
+                    <BarChart3 size={20} /> {todayGrades ? "Update & Save" : "Finish & Collect XP Coins"}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showShopModal && (
+        <ShopModal 
+          userStats={userStats} 
+          onClose={() => setShowShopModal(false)}
+          onBuy={handleBuyTheme}
+          onEquip={handleEquipTheme}
+          themeColor={themeColor}
+        />
+      )}
+
+      {selectedLog && <HistoryModal log={selectedLog} onClose={() => setSelectedLog(null)} themeColor={themeColor} />}
+    </div>
+  );
+}
+
